@@ -1,0 +1,136 @@
+name: opensearch
+title: OpenSearch
+icon: opensearch
+type: search
+scalable: false
+
+labels:
+- opensearch
+- search
+
+options:
+- version: '3.8'
+  tag: '3.8.0'
+  default: true
+
+endpoints:
+- name: opensearch
+  ports:
+  - name: api
+    number: 9200
+    protocol: tcp
+    main: true
+    private: true
+  - name: transport
+    number: 9300
+    protocol: tcp
+    private: true
+  - name: metrics
+    number: 9600
+    protocol: http
+    private: true
+
+tokens:
+- name: password
+  generate:
+    regex: '[A-Za-z0-9!@#%_-]{32}'
+
+env:
+- name: discovery.type
+  value: single-node
+- name: cluster.name
+  value: '{{app.name}}-{{instance.name}}'
+- name: bootstrap.memory_lock
+  value: 'false'
+- name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+  value: '{{password}}'
+  secret: true
+- name: OPENSEARCH_JAVA_OPTS
+  value: -Xms1g -Xmx1g
+
+volumes:
+- name: data
+  title: OpenSearch data
+  size: 20
+  helm:
+    labels: persistence.labels
+    values:
+    - name: persistence.enabled
+      value: true
+    - name: persistence.existingClaim
+      value: '{{volumes.data.claim}}'
+    - name: persistence.size
+      value: '{{volumes.data.size}}Gi'
+
+helm:
+  name: wodby
+  source: oci://registry-1.docker.io/wodby/stateful
+  chart: oci://registry-1.docker.io/wodby/stateful
+  version: 0.2.0
+  valueMappings:
+    replicas: replicaCount
+    nameOverride: nameOverride
+    fullnameOverride: fullnameOverride
+    serviceAccountName: serviceAccount.name
+    serviceAccountCreate: serviceAccount.create
+    strategy: updateStrategy.type
+    minReady: minReadySeconds
+    shutdownGracePeriod: terminationGracePeriodSeconds
+  values:
+  - name: containerName
+    value: opensearch
+  - name: containerPorts
+    value:
+    - name: api
+      containerPort: 9200
+      protocol: TCP
+    - name: transport
+      containerPort: 9300
+      protocol: TCP
+    - name: metrics
+      containerPort: 9600
+      protocol: TCP
+  - name: headlessService.enabled
+    value: false
+  - name: persistence.mountPath
+    value: /usr/share/opensearch/data
+  - name: startupProbe
+    value:
+      tcpSocket:
+        port: api
+      failureThreshold: 30
+      periodSeconds: 10
+  - name: readinessProbe
+    value:
+      tcpSocket:
+        port: api
+      periodSeconds: 10
+  - name: livenessProbe
+    value:
+      tcpSocket:
+        port: api
+      initialDelaySeconds: 60
+      periodSeconds: 20
+  - name: podSecurityContext
+    value:
+      fsGroup: 1000
+      fsGroupChangePolicy: OnRootMismatch
+
+workloads:
+- name: main
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: '{{helm.release}}'
+  kind: statefulset
+  primary: true
+  helm:
+    labels: podLabels
+    annotations: podAnnotations
+    volumes: extraVolumes
+  containers:
+  - name: opensearch
+    image: opensearchproject/opensearch
+    helm:
+      resources: resources
+      env: envVars
+      mounts: extraVolumeMounts
