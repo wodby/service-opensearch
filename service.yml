@@ -1,5 +1,6 @@
 name: opensearch
 title: OpenSearch
+guidance: GUIDANCE.md
 icon: opensearch
 type: search
 scalable: false
