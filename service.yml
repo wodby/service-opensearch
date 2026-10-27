@@ -34,7 +34,9 @@ endpoints:
 tokens:
 - name: password
   generate:
-    regex: '[A-Za-z0-9!@#%_-]{32}'
+    # OpenSearch refuses an initial admin password without an uppercase letter, a lowercase letter, a digit and a
+    # special character, so the first four characters guarantee one of each.
+    regex: '[A-Z][a-z][0-9][!@#%_-][A-Za-z0-9!@#%_-]{28}'
 
 env:
 - name: discovery.type
