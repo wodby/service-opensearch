@@ -37,6 +37,9 @@ tokens:
     # OpenSearch refuses an initial admin password without an uppercase letter, a lowercase letter, a digit and a
     # special character, so the first four characters guarantee one of each.
     regex: '[A-Z][a-z][0-9][!@#%_-][A-Za-z0-9!@#%_-]{28}'
+- name: dashboards_password
+  generate:
+    regex: '[A-Z][a-z][0-9][!@#%_-][A-Za-z0-9!@#%_-]{28}'
 
 env:
 - name: discovery.type
@@ -47,6 +50,9 @@ env:
   value: 'false'
 - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
   value: '{{password}}'
+  secret: true
+- name: DASHBOARDS_SERVER_PASSWORD
+  value: '{{dashboards_password}}'
   secret: true
 - name: OPENSEARCH_JAVA_OPTS
   value: -Xms1g -Xmx1g
@@ -97,6 +103,44 @@ helm:
     value: false
   - name: persistence.mountPath
     value: /usr/share/opensearch/data
+  - name: lifecycle
+    value:
+      postStart:
+        exec:
+          command:
+          - /bin/bash
+          - -ec
+          - |
+            # The image's demo security configuration creates accounts whose passwords are public. Give the Dashboards
+            # server account a generated password and remove the rest. Both changes persist in the security index.
+            config=/usr/share/opensearch/config
+            [ -f "$config/kirk.pem" ] || exit 0
+            api() {
+              curl --silent --insecure --cert "$config/kirk.pem" --key "$config/kirk-key.pem" \
+                --header "Content-Type: application/json" "$@"
+            }
+            for ((attempt=1; attempt<=120; attempt++)); do
+              # A node with the security plugin disabled answers plain HTTP and has no accounts to change.
+              if curl --silent --fail --output /dev/null http://127.0.0.1:9200/; then
+                exit 0
+              fi
+              if printf '{"password":"%s","reserved":true,"description":"OpenSearch Dashboards server account"}' "$DASHBOARDS_SERVER_PASSWORD" |
+                api --show-error --fail --output /dev/null --request PUT --data @- \
+                  https://127.0.0.1:9200/_plugins/_security/api/internalusers/kibanaserver; then
+                for user in kibanaro logstash readall snapshotrestore anomalyadmin; do
+                  status=$(api --output /dev/null --write-out '%{http_code}' --request DELETE \
+                    "https://127.0.0.1:9200/_plugins/_security/api/internalusers/$user")
+                  case "$status" in
+                    200|404) ;;
+                    *) echo "Could not remove the demo account $user: HTTP $status" >&2; exit 1 ;;
+                  esac
+                done
+                exit 0
+              fi
+              sleep 5
+            done
+            echo "Timed out securing the demo accounts" >&2
+            exit 1
   - name: startupProbe
     value:
       tcpSocket:
