@@ -114,7 +114,6 @@ helm:
             # The image's demo security configuration creates accounts whose passwords are public. Give the Dashboards
             # server account a generated password and remove the rest. Both changes persist in the security index.
             config=/usr/share/opensearch/config
-            [ -f "$config/kirk.pem" ] || exit 0
             api() {
               curl --silent --insecure --cert "$config/kirk.pem" --key "$config/kirk-key.pem" \
                 --header "Content-Type: application/json" "$@"
@@ -124,7 +123,13 @@ helm:
               if curl --silent --fail --output /dev/null http://127.0.0.1:9200/; then
                 exit 0
               fi
-              if printf '{"password":"%s","reserved":true,"description":"OpenSearch Dashboards server account"}' "$DASHBOARDS_SERVER_PASSWORD" |
+              # The image writes the demo certificate while starting, so it may not exist yet. A node that answers without
+              # one was given its own security configuration, which has no demo accounts.
+              if [ ! -f "$config/kirk.pem" ]; then
+                if curl --silent --insecure --output /dev/null https://127.0.0.1:9200/; then
+                  exit 0
+                fi
+              elif printf '{"password":"%s","reserved":true,"description":"OpenSearch Dashboards server account"}' "$DASHBOARDS_SERVER_PASSWORD" |
                 api --show-error --fail --output /dev/null --request PUT --data @- \
                   https://127.0.0.1:9200/_plugins/_security/api/internalusers/kibanaserver; then
                 for user in kibanaro logstash readall snapshotrestore anomalyadmin; do
