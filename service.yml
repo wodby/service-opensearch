@@ -182,6 +182,12 @@ workloads:
   containers:
   - name: opensearch
     image: opensearchproject/opensearch
+    resources:
+      request:
+        cpu: 350
+        memory: 1424
+      limit:
+        memory: 3072
     helm:
       resources: resources
       env: envVars
