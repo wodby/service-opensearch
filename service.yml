@@ -12,6 +12,7 @@ labels:
 options:
 - version: '3.8'
   tag: '3.8.0'
+  digest: sha256:fafe3fc3587088674669235575aa166228c48bdb940294a8cdbbc1da75236a40
   default: true
 
 endpoints:
